@@ -34,6 +34,7 @@ const verifyJWT = (req, res, next) => {
     const token = authorization.split(' ')[1];
 
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        console.log('decoded token', decoded)
         if (err) {
             return res.status(401).send({ error: true, message: 'unauthorized access' })
         }
@@ -69,12 +70,12 @@ async function run() {
 
         //verify admin middleware
         // warning use verifyJWT before verifyAdmin 
-        const verifyAdmin = async (req, res, next)=>{
+        const verifyAdmin = async (req, res, next) => {
             const email = req.decoded.email;
-            const query = {email: email}
+            const query = { email: email }
             const user = await usersCollection.findOne(query)
-            if(user?.role !== 'admin'){
-                return res.status(403).send({error: true, message: 'forbidden access'})
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ error: true, message: 'forbidden access' })
             }
             next()
         }
@@ -113,17 +114,18 @@ async function run() {
          * layer-2 email check
          * check admin
          */
-        app.get('/users/admin/:email', verifyJWT, async (req, res) => {
-            const email = req.query.email;
-
+        app.get('/users/admin/:email', verifyJWT, verifyAdmin, async (req, res) => {
+            const email = req.params.email;
             const decodedEmail = req.decoded.email;
+            console.log('decodedEmail', decodedEmail)
             if (email !== decodedEmail) {
-                return res.send({admin: false})
+                return res.send({ admin: false })
             }
 
             const query = { email: email }
             const user = await usersCollection.findOne(query)
-            const result = {admin: user?.role === 'admin'}
+            console.log('user role', user?.role)
+            const result = { admin: user?.role === 'admin' }
             res.send(result)
         })
 
@@ -153,6 +155,14 @@ async function run() {
             const result = await menuCollection.find().toArray();
             res.send(result)
         })
+
+        app.post('/menu', async (req, res) => {
+            const newItem = req.body;
+            const result = await menuCollection.insertOne(newItem)
+            res.send(result)
+        })
+
+        //post 
 
         //reviews related apis
         app.get('/reviews', async (req, res) => {
