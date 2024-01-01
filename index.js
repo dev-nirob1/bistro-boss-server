@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const app = express()
 require('dotenv').config()
 const port = process.env.PORT || 5000;
-
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 //middleware
 app.use(cors())
 app.use(express.json())
@@ -86,6 +86,22 @@ async function run() {
             res.send({ token })
         })
 
+        //payment related apis
+        app.post('create-payment-intent', async (req, res) => {
+            const { price } = req.body;
+            const amount = price * 100
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "usd",
+                payment_method_types: [
+                    'card'
+                ]
+            })
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        })
+
         // users related apis 
         /*do not show secure links to those who should not see links
         * use JWT token : verifyJWT
@@ -159,6 +175,12 @@ async function run() {
         app.post('/menu', async (req, res) => {
             const newItem = req.body;
             const result = await menuCollection.insertOne(newItem)
+            res.send(result)
+        })
+        app.delete('/menu/:id', verifyJWT, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await menuCollection.deleteOne(query)
             res.send(result)
         })
 
