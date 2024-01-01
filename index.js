@@ -34,7 +34,6 @@ const verifyJWT = (req, res, next) => {
     const token = authorization.split(' ')[1];
 
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-        console.log('decoded token', decoded)
         if (err) {
             return res.status(401).send({ error: true, message: 'unauthorized access' })
         }
@@ -67,6 +66,7 @@ async function run() {
         const reviewCollection = client.db("bistroBossDB").collection("reviews");
         const cartCollection = client.db("bistroBossDB").collection("carts");
         const usersCollection = client.db("bistroBossDB").collection("users");
+        const paymentsCollection = client.db("bistroBossDB").collection("payments");
 
         //verify admin middleware
         // warning use verifyJWT before verifyAdmin 
@@ -87,9 +87,9 @@ async function run() {
         })
 
         //payment related apis
-        app.post('create-payment-intent', async (req, res) => {
+        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
             const { price } = req.body;
-            const amount = price * 100
+            const amount = parseInt(price * 100)
             const paymentIntent = await stripe.paymentIntents.create({
                 amount: amount,
                 currency: "usd",
@@ -100,6 +100,16 @@ async function run() {
             res.send({
                 clientSecret: paymentIntent.client_secret,
             });
+        })
+
+        // store payment data to server
+        app.post('/payments', verifyJWT, async (req, res) => {
+            const payment = req.body;
+            const insertResult = await paymentsCollection.insertOne(payment)
+
+            const query = { _id: { $in: payment.cartItem.map(id => new ObjectId(id)) } }
+            const deleteResult = await cartCollection.deleteMany(query)
+            res.send({ insertResult, deleteResult })
         })
 
         // users related apis 
@@ -132,15 +142,13 @@ async function run() {
          */
         app.get('/users/admin/:email', verifyJWT, verifyAdmin, async (req, res) => {
             const email = req.params.email;
-            const decodedEmail = req.decoded.email;
-            console.log('decodedEmail', decodedEmail)
+            const decodedEmail = req.decoded.email;           
             if (email !== decodedEmail) {
                 return res.send({ admin: false })
             }
 
             const query = { email: email }
-            const user = await usersCollection.findOne(query)
-            console.log('user role', user?.role)
+            const user = await usersCollection.findOne(query)        
             const result = { admin: user?.role === 'admin' }
             res.send(result)
         })
