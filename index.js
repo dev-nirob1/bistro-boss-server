@@ -102,6 +102,50 @@ async function run() {
             });
         })
 
+        //admin states
+        app.get('/admin-stats', verifyJWT, verifyAdmin, async (req, res) => {
+            const users = await usersCollection.estimatedDocumentCount()
+            const orders = await paymentsCollection.estimatedDocumentCount()
+            const products = await menuCollection.estimatedDocumentCount()
+            const payments = await paymentsCollection.find().toArray()
+            // console.log(payments)
+            const revenue = payments.reduce((sum, payment) => sum + payment.price, 0)
+            res.send({ users, orders, products, revenue })
+        })
+
+        app.get('/order-stats', verifyJWT, verifyAdmin, async (req, res) => {
+            const pipeline = [
+                {
+                    $lookup: {
+                        from: 'menu',
+                        localField: 'menuItem',
+                        foreignField: '_id',
+                        as: 'menuItemData'
+                    }
+                },
+                {
+                    $unwind: '$menuItemData'
+                },
+                {
+                    $group: {
+                        _id: '$menuItemData.category',
+                        count: { $sum: 1 },
+                        total: { $sum: '$menuItemData.price' }
+                    }
+                },
+                {
+                    $project: {
+                        category: '$_id',
+                        count: 1,
+                        total: { $round: ['$total', 2] },
+                        _id: 0
+                    }
+                }
+            ]
+            const result = await paymentsCollection.aggregate(pipeline).toArray()
+            res.send(result)
+        })
+
         // store payment data to server
         app.post('/payments', verifyJWT, async (req, res) => {
             const payment = req.body;
@@ -124,13 +168,13 @@ async function run() {
 
         //add user to database
         app.post('/users', async (req, res) => {
-            const user = req.body;
-            const query = { email: user.email }
+            const savedUser = req.body;
+            const query = { email: savedUser.email }
             const existingUser = await usersCollection.findOne(query)
             if (existingUser) {
                 return res.send({ message: 'user already exist' })
             }
-            const result = await usersCollection.insertOne(user)
+            const result = await usersCollection.insertOne(savedUser)
             res.send(result)
         })
 
@@ -140,21 +184,20 @@ async function run() {
          * layer-2 email check
          * check admin
          */
-        app.get('/users/admin/:email', verifyJWT, verifyAdmin, async (req, res) => {
+        app.get('/users/admin/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
-            const decodedEmail = req.decoded.email;           
+            const decodedEmail = req.decoded.email;
             if (email !== decodedEmail) {
                 return res.send({ admin: false })
             }
-
             const query = { email: email }
-            const user = await usersCollection.findOne(query)        
+            const user = await usersCollection.findOne(query)
             const result = { admin: user?.role === 'admin' }
             res.send(result)
         })
 
         // update user role to admin 
-        app.patch('/users/admin/:id', async (req, res) => {
+        app.patch('/users/admin/:id', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const filter = { _id: new ObjectId(id) }
             const updateDoc = {
@@ -167,7 +210,7 @@ async function run() {
         })
 
         //delete user from database
-        app.delete('/users/:id', async (req, res) => {
+        app.delete('/users/:id', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
             const result = await usersCollection.deleteOne(query)
@@ -180,11 +223,12 @@ async function run() {
             res.send(result)
         })
 
-        app.post('/menu', async (req, res) => {
+        app.post('/menu', verifyJWT, verifyAdmin, async (req, res) => {
             const newItem = req.body;
             const result = await menuCollection.insertOne(newItem)
             res.send(result)
         })
+
         app.delete('/menu/:id', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
@@ -244,7 +288,7 @@ async function run() {
             res.send(result)
         })
 
-        app.delete('/carts/:id', async (req, res) => {
+        app.delete('/carts/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
             const result = await cartCollection.deleteOne(query)
